@@ -38,7 +38,8 @@
 
 #include <Adafruit_MLX90614.h>
 
-
+#include <FS.h>
+#include "SPIFFS.h"
 #include <WiFi.h>
 
 #include <DNSServer.h>
@@ -508,10 +509,47 @@ void Task2code( void * pvParameters ) {
     Serial.println(sett.TOKEN);
   }
 
-
+  char baudrate[8];
+  char databits[10];
+  char paritybits[10];
+  char stopbits[10];
+  char program[2];
+  char mode_select[3];
 
   void setup(void) {
+    if (SPIFFS.begin()) {
+    Serial.println("mounted file system");
+    if (SPIFFS.exists("/config.json")) {
+      //file exists, reading and loading
+      Serial.println("reading config file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
 
+        configFile.readBytes(buf.get(), size);
+        DynamicJsonDocument jsonBuffer(1024);
+        deserializeJson(jsonBuffer, buf.get());
+        serializeJson(jsonBuffer, Serial);
+        if (!jsonBuffer.isNull()) {
+          Serial.println("\nparsed json");
+          //strcpy(output, json["output"]);
+          if (jsonBuffer.containsKey("baudrate")) strcpy(baudrate, jsonBuffer["baudrate"]);
+          if (jsonBuffer.containsKey("databits")) strcpy(databits, jsonBuffer["databits"]);
+          if (jsonBuffer.containsKey("paritybits")) strcpy(paritybits, jsonBuffer["paritybits"]);
+          if (jsonBuffer.containsKey("stopbits")) strcpy(stopbits, jsonBuffer["stopbits"]);
+          if (jsonBuffer.containsKey("program")) strcpy(program, jsonBuffer["program"]);
+          if (jsonBuffer.containsKey("mode_select")) strcpy(mode_select, jsonBuffer["mode_select"]);
+        } else {
+          Serial.println("failed to load json config");
+        }
+      }
+    }
+  } else {
+    Serial.println("failed to mount FS");
+  }
     Serial.begin(115200);
     // make the pins outputs:
     pinMode(15, OUTPUT);
@@ -534,7 +572,12 @@ void Task2code( void * pvParameters ) {
     tft.drawString("(120 Sec)", 40, (tft.height() / 2) + 5, 4);
     tft.setTextColor(TFT_BLUE);
 
-
+    WiFiManagerParameter baudrate_param("baudrate", "Serial Port : Baudrate", baudrate, 8);
+    WiFiManagerParameter databits_param("databits", "Serial Port : Data Bits", databits, 10);
+    WiFiManagerParameter paritybits_param("paritybits", "Serial Port : Parity Bits", paritybits, 10);
+    WiFiManagerParameter stopbits_param("stopbits", "Serial Port : Stop Bits", stopbits, 10);
+    WiFiManagerParameter program_param("program", "Program", program, 2);
+    WiFiManagerParameter mode_param("mode", "Mode (1-10)", mode_select, 3);
     wifiManager.setTimeout(120);
     HeartBeat();
     wifiManager.setAPCallback(configModeCallback);
@@ -556,6 +599,12 @@ void Task2code( void * pvParameters ) {
     wifiManager.addParameter( &blynk_Token );
     wifiManager.addParameter( &blynk_Server );
     wifiManager.addParameter( &blynk_Port );
+    wifiManager.addParameter(&baudrate_param);
+    wifiManager.addParameter(&databits_param);
+    wifiManager.addParameter(&paritybits_param);
+    wifiManager.addParameter(&stopbits_param);
+    wifiManager.addParameter(&program_param);
+    wifiManager.addParameter(&mode_param);
 
 
     //set config save notify callback
@@ -571,7 +620,28 @@ void Task2code( void * pvParameters ) {
 
     }
     deviceToken = wifiName.c_str();
+    if (baudrate_param.getValue() != "") strcpy(baudrate, baudrate_param.getValue());
+    if (databits_param.getValue() != "") strcpy(databits, databits_param.getValue());
+    if (paritybits_param.getValue() != "") strcpy(paritybits, paritybits_param.getValue());
+    if (stopbits_param.getValue() != "") strcpy(stopbits, stopbits_param.getValue());
+    if (program_param.getValue() != "") strcpy(program, program_param.getValue());
+    if (mode_param.getValue() != "") strcpy(mode_select, mode_param.getValue());
+    Serial.println("saving config");
+    DynamicJsonDocument jsonBuffer(1024);
+    jsonBuffer["baudrate"] = baudrate;
+    jsonBuffer["databits"] = databits;
+    jsonBuffer["paritybits"] = paritybits;
+    jsonBuffer["stopbits"] = stopbits;
+    jsonBuffer["program"] = program;
+    jsonBuffer["mode_select"] = mode_select;
+    File configFile = SPIFFS.open("/config.json", "w");
+    if (!configFile) {
+      Serial.println("failed to open config file for writing");
+    }
 
+    serializeJson(jsonBuffer, Serial);
+    serializeJson(jsonBuffer, configFile);
+    configFile.close();
 
     configTime(gmtOffset_sec, 0, ntpServer);
     client.setServer( sett.SERVER, sett.PORT );
