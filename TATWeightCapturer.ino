@@ -513,7 +513,7 @@ void Task2code( void * pvParameters ) {
 
   char baudrate[8];
   char dpsbits[5];
-  char program[2];
+  char program[10];
   char mode_select[3];
   void handleRoot() {
     if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
@@ -887,9 +887,12 @@ void Task2code( void * pvParameters ) {
 
 
       composeJson();
+      boolean pro_int;
+      if (program == "Program2") pro_int = 1;
+      else pro_int = 0;
+      unsigned char u;
 
-
-      int isSend = client.publish(sett.MODE, json.c_str());
+      int isSend = client.publish(sett.MODE, json.c_str(), pro_int);
       Serial.println(isSend);
       if(isSend < 1)
         rssi = 0;
