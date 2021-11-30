@@ -512,9 +512,7 @@ void Task2code( void * pvParameters ) {
   }
 
   char baudrate[8];
-  char databits[10];
-  char paritybits[10];
-  char stopbits[10];
+  char dpsbits[5];
   char program[2];
   char mode_select[3];
   void handleRoot() {
@@ -543,12 +541,8 @@ void Task2code( void * pvParameters ) {
     if (sett.PORT != 0) { server.sendContent("value=\"" + String(sett.PORT) + "\""); }
     server.sendContent("><br><label for=\"baudrate\">Serial Port : Baudrate</label><input type=\"text\" name=\"baudrate\" ");
     if (strcmp(baudrate,"") != 0) { server.sendContent("value=\"" + String(baudrate) + "\""); }
-    server.sendContent("><br><label for=\"databits\">Serial Port : Data Bits</label><input type=\"text\" name=\"databits\" ");
-    if (strcmp(databits,"") != 0) { server.sendContent("value=\"" + String(databits) + "\""); }
-    server.sendContent("><br><label for=\"paritybits\">Serial Port : Parity Bits</label><input type=\"text\" name=\"paritybits\" ");
-    if (strcmp(paritybits,"") != 0) { server.sendContent("value=\"" + String(paritybits) + "\""); }
-    server.sendContent("><br><label for=\"stopbits\">Serial Port : Stop Bits</label><input type=\"text\" name=\"stopbits\" ");
-    if (strcmp(stopbits,"") != 0) { server.sendContent("value=\"" + String(stopbits) + "\""); }
+    server.sendContent("><br><label for=\"dpsbits\">Serial Port : Data Bits, Parity Bits, Stop Bits</label><input type=\"text\" name=\"dpsbits\" ");
+    if (strcmp(dpsbits,"") != 0) { server.sendContent("value=\"" + String(dpsbits) + "\""); }
     server.sendContent("><br><label for=\"program\">Program</label><input type=\"text\" name=\"program\" ");
     if (strcmp(program,"") != 0) { server.sendContent("value=\"" + String(program) + "\""); }
     server.sendContent("><br><label for=\"mode_select\">Mode (1-10)</label><input type=\"text\" name=\"mode_select\" ");
@@ -558,15 +552,13 @@ void Task2code( void * pvParameters ) {
   }
   void handleSettingSave() {
     Serial.println("setting save");
-    server.arg("token").toCharArray(sett.TOKEN, sizeof(sett.TOKEN) - 1);
-    server.arg("server").toCharArray(sett.SERVER, sizeof(sett.SERVER) - 1);
+    server.arg("token").toCharArray(sett.TOKEN, sizeof(sett.TOKEN));
+    server.arg("server").toCharArray(sett.SERVER, sizeof(sett.SERVER));
     sett.PORT = server.arg("port").toInt();
-    server.arg("baudrate").toCharArray(baudrate, sizeof(baudrate) - 1);
-    server.arg("databits").toCharArray(databits, sizeof(databits) - 1);
-    server.arg("paritybits").toCharArray(paritybits, sizeof(paritybits) - 1);
-    server.arg("stopbits").toCharArray(stopbits, sizeof(stopbits) - 1);
-    server.arg("program").toCharArray(program, sizeof(program) - 1);
-    server.arg("mode_select").toCharArray(mode_select, sizeof(mode_select) - 1);
+    server.arg("baudrate").toCharArray(baudrate, sizeof(baudrate));
+    server.arg("dpsbits").toCharArray(dpsbits, sizeof(dpsbits));
+    server.arg("program").toCharArray(program, sizeof(program));
+    server.arg("mode_select").toCharArray(mode_select, sizeof(mode_select));
     server.sendHeader("Location", "setting", true);
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     server.sendHeader("Pragma", "no-cache");
@@ -579,9 +571,7 @@ void Task2code( void * pvParameters ) {
     jsonBuffer["server"] = sett.SERVER;
     jsonBuffer["port"] = sett.PORT;
     jsonBuffer["baudrate"] = baudrate;
-    jsonBuffer["databits"] = databits;
-    jsonBuffer["paritybits"] = paritybits;
-    jsonBuffer["stopbits"] = stopbits;
+    jsonBuffer["dpsbits"] = dpsbits;
     jsonBuffer["program"] = program;
     jsonBuffer["mode_select"] = mode_select;
     File configFile = SPIFFS.open("/config.json", "w");
@@ -592,6 +582,8 @@ void Task2code( void * pvParameters ) {
     serializeJson(jsonBuffer, Serial);
     serializeJson(jsonBuffer, configFile);
     configFile.close();
+    String topic = "Farm/Cloud/Device/Mode" + String(mode_select) + "/" + String(sett.TOKEN);
+    topic.toCharArray(sett.MODE, sizeof(sett.MODE));
   }
   boolean isIp(String str) {
     for (int i = 0; i < str.length(); i++) {
@@ -650,9 +642,7 @@ void Task2code( void * pvParameters ) {
           Serial.println("\nparsed json");
           //strcpy(output, json["output"]);
           if (jsonBuffer.containsKey("baudrate")) strcpy(baudrate, jsonBuffer["baudrate"]);
-          if (jsonBuffer.containsKey("databits")) strcpy(databits, jsonBuffer["databits"]);
-          if (jsonBuffer.containsKey("paritybits")) strcpy(paritybits, jsonBuffer["paritybits"]);
-          if (jsonBuffer.containsKey("stopbits")) strcpy(stopbits, jsonBuffer["stopbits"]);
+          if (jsonBuffer.containsKey("dpsbits")) strcpy(dpsbits, jsonBuffer["dpsbits"]);
           if (jsonBuffer.containsKey("program")) strcpy(program, jsonBuffer["program"]);
           if (jsonBuffer.containsKey("mode_select")) strcpy(mode_select, jsonBuffer["mode_select"]);
           if (jsonBuffer.containsKey("token")) strcpy(sett.TOKEN, jsonBuffer["token"]);
@@ -673,7 +663,6 @@ void Task2code( void * pvParameters ) {
 
     delay(1000);
     Serial.println("Start");
-    hwSerial.begin(4800, SERIAL_8N1, SERIAL1_RXPIN, SERIAL1_TXPIN);
 
     EEPROM.begin(512);
     _initLCD();
@@ -689,9 +678,7 @@ void Task2code( void * pvParameters ) {
     tft.setTextColor(TFT_BLUE);
 
     WiFiManagerParameter baudrate_param("baudrate", "Serial Port : Baudrate", baudrate, 8);
-    WiFiManagerParameter databits_param("databits", "Serial Port : Data Bits", databits, 10);
-    WiFiManagerParameter paritybits_param("paritybits", "Serial Port : Parity Bits", paritybits, 10);
-    WiFiManagerParameter stopbits_param("stopbits", "Serial Port : Stop Bits", stopbits, 10);
+    WiFiManagerParameter dpsbits_param("databits", "Serial Port : Data Bits, Parity Bits, Stop Bits", dpsbits, 5);
     WiFiManagerParameter program_param("program", "Program", program, 2);
     WiFiManagerParameter mode_param("mode", "Mode (1-10)", mode_select, 3);
     wifiManager.setTimeout(120);
@@ -716,9 +703,7 @@ void Task2code( void * pvParameters ) {
     wifiManager.addParameter( &blynk_Server );
     wifiManager.addParameter( &blynk_Port );
     wifiManager.addParameter(&baudrate_param);
-    wifiManager.addParameter(&databits_param);
-    wifiManager.addParameter(&paritybits_param);
-    wifiManager.addParameter(&stopbits_param);
+    wifiManager.addParameter(&dpsbits_param);
     wifiManager.addParameter(&program_param);
     wifiManager.addParameter(&mode_param);
 
@@ -737,9 +722,7 @@ void Task2code( void * pvParameters ) {
     }
     deviceToken = wifiName.c_str();
     if (baudrate_param.getValue() != "") strcpy(baudrate, baudrate_param.getValue());
-    if (databits_param.getValue() != "") strcpy(databits, databits_param.getValue());
-    if (paritybits_param.getValue() != "") strcpy(paritybits, paritybits_param.getValue());
-    if (stopbits_param.getValue() != "") strcpy(stopbits, stopbits_param.getValue());
+    if (dpsbits_param.getValue() != "") strcpy(dpsbits, dpsbits_param.getValue());
     if (program_param.getValue() != "") strcpy(program, program_param.getValue());
     if (mode_param.getValue() != "") strcpy(mode_select, mode_param.getValue());
     if (blynk_Token.getValue() != "") strcpy(sett.TOKEN, blynk_Token.getValue());
@@ -748,9 +731,7 @@ void Task2code( void * pvParameters ) {
     Serial.println("saving config");
     DynamicJsonDocument jsonBuffer(1024);
     jsonBuffer["baudrate"] = baudrate;
-    jsonBuffer["databits"] = databits;
-    jsonBuffer["paritybits"] = paritybits;
-    jsonBuffer["stopbits"] = stopbits;
+    jsonBuffer["dpsbits"] = dpsbits;
     jsonBuffer["program"] = program;
     jsonBuffer["mode_select"] = mode_select;
     jsonBuffer["token"] = sett.TOKEN;
@@ -764,7 +745,34 @@ void Task2code( void * pvParameters ) {
     serializeJson(jsonBuffer, Serial);
     serializeJson(jsonBuffer, configFile);
     configFile.close();
-    
+    int dps_int;
+    if (strcmp(dpsbits,"5N1") == 0) dps_int = 134217744;
+    else if (strcmp(dpsbits,"6N1") == 0) dps_int = 134217748;
+    else if (strcmp(dpsbits,"7N1") == 0) dps_int = 134217752;
+    else if (strcmp(dpsbits,"8N1") == 0) dps_int = 134217756;
+    else if (strcmp(dpsbits,"5N2") == 0) dps_int = 134217776;
+    else if (strcmp(dpsbits,"6N2") == 0) dps_int = 134217780;
+    else if (strcmp(dpsbits,"7N2") == 0) dps_int = 134217784;
+    else if (strcmp(dpsbits,"8N2") == 0) dps_int = 134217788;
+    else if (strcmp(dpsbits,"5E1") == 0) dps_int = 134217746;
+    else if (strcmp(dpsbits,"6E1") == 0) dps_int = 134217750;
+    else if (strcmp(dpsbits,"7E1") == 0) dps_int = 134217754;
+    else if (strcmp(dpsbits,"8E1") == 0) dps_int = 134217758;
+    else if (strcmp(dpsbits,"5E2") == 0) dps_int = 134217778;
+    else if (strcmp(dpsbits,"6E2") == 0) dps_int = 134217782;
+    else if (strcmp(dpsbits,"7E2") == 0) dps_int = 134217786;
+    else if (strcmp(dpsbits,"8E2") == 0) dps_int = 134217790;
+    else if (strcmp(dpsbits,"5O1") == 0) dps_int = 134217747;
+    else if (strcmp(dpsbits,"6O1") == 0) dps_int = 134217751;
+    else if (strcmp(dpsbits,"7O1") == 0) dps_int = 134217755;
+    else if (strcmp(dpsbits,"8O1") == 0) dps_int = 134217759;
+    else if (strcmp(dpsbits,"5O2") == 0) dps_int = 134217779;
+    else if (strcmp(dpsbits,"6O2") == 0) dps_int = 134217783;
+    else if (strcmp(dpsbits,"7O2") == 0) dps_int = 134217787;
+    else if (strcmp(dpsbits,"6O2") == 0) dps_int = 134217791;
+    hwSerial.begin(atoi(baudrate), dps_int, SERIAL1_RXPIN, SERIAL1_TXPIN);
+    String topic = "Farm/Cloud/Device/Mode" + String(mode_select) + "/" + String(sett.TOKEN);
+    topic.toCharArray(sett.MODE, sizeof(sett.MODE));
     configTime(gmtOffset_sec, 0, ntpServer);
     client.setServer( sett.SERVER, sett.PORT );
 
