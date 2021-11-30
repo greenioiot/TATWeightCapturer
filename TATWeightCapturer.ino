@@ -50,6 +50,7 @@
 
 
 #include <ArduinoOTA.h>
+#include <WebServer.h>
 
 
 #include "Alert.h" // Out of range alert icon
@@ -85,6 +86,7 @@ float DP = 0.0;
 unsigned long ms;
 unsigned long diffMillis = 0;
 TaskHandle_t Task2;
+WebServer server(80);
 
 struct Settings
 {
@@ -515,7 +517,118 @@ void Task2code( void * pvParameters ) {
   char stopbits[10];
   char program[2];
   char mode_select[3];
+  void handleRoot() {
+    if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
+      return;
+    }
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "-1");
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "text/html", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+    server.sendContent("<!DOCTYPE html><html lang=\"en\"><head> <meta charset=\"UTF-8\"> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Setting</title></head><body> <div style=\"text-align: center;\"> <h1>Setting</h1><a style=\"background-color: red;border: 0;padding: 10px 20px;color: white;font-weight: 600;border-radius: 5px;\" href=\"/setting\">Setting</a> </div></body></html>");
+    server.client().stop(); // Stop is needed because we sent no content length
+  }
+  void handleSetting() {
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "-1");
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "text/html", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+    server.sendContent("<!DOCTYPE html><html lang=\"en\"><head> <meta charset=\"UTF-8\"> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Setting</title></head><body> <h1>Setting</h1> <form method=\"POST\" action=\"save_setting\"> <label for=\"token\">Device Token</label> <input type=\"text\" name=\"token\" ");
+    if (strcmp(sett.TOKEN,"") != 0) { server.sendContent("value=\"" + String(sett.TOKEN) + "\""); }
+    server.sendContent("><br><label for=\"server\">Server</label><input type=\"text\" name=\"server\" ");
+    if (strcmp(sett.SERVER,"") != 0) { server.sendContent("value=\"" + String(sett.SERVER) + "\""); }
+    server.sendContent("><br><label for=\"port\">Port</label><input type=\"text\" name=\"port\" ");
+    if (sett.PORT != 0) { server.sendContent("value=\"" + String(sett.PORT) + "\""); }
+    server.sendContent("><br><label for=\"baudrate\">Serial Port : Baudrate</label><input type=\"text\" name=\"baudrate\" ");
+    if (strcmp(baudrate,"") != 0) { server.sendContent("value=\"" + String(baudrate) + "\""); }
+    server.sendContent("><br><label for=\"databits\">Serial Port : Data Bits</label><input type=\"text\" name=\"databits\" ");
+    if (strcmp(databits,"") != 0) { server.sendContent("value=\"" + String(databits) + "\""); }
+    server.sendContent("><br><label for=\"paritybits\">Serial Port : Parity Bits</label><input type=\"text\" name=\"paritybits\" ");
+    if (strcmp(paritybits,"") != 0) { server.sendContent("value=\"" + String(paritybits) + "\""); }
+    server.sendContent("><br><label for=\"stopbits\">Serial Port : Stop Bits</label><input type=\"text\" name=\"stopbits\" ");
+    if (strcmp(stopbits,"") != 0) { server.sendContent("value=\"" + String(stopbits) + "\""); }
+    server.sendContent("><br><label for=\"program\">Program</label><input type=\"text\" name=\"program\" ");
+    if (strcmp(program,"") != 0) { server.sendContent("value=\"" + String(program) + "\""); }
+    server.sendContent("><br><label for=\"mode_select\">Mode (1-10)</label><input type=\"text\" name=\"mode_select\" ");
+    if (strcmp(mode_select,"") != 0) { server.sendContent("value=\"" + String(mode_select) + "\""); }
+    server.sendContent("><br><input type=\"submit\" value=\"Save\"></form></body></html>");
+    server.client().stop();
+  }
+  void handleSettingSave() {
+    Serial.println("setting save");
+    server.arg("token").toCharArray(sett.TOKEN, sizeof(sett.TOKEN) - 1);
+    server.arg("server").toCharArray(sett.SERVER, sizeof(sett.SERVER) - 1);
+    sett.PORT = server.arg("port").toInt();
+    server.arg("baudrate").toCharArray(baudrate, sizeof(baudrate) - 1);
+    server.arg("databits").toCharArray(databits, sizeof(databits) - 1);
+    server.arg("paritybits").toCharArray(paritybits, sizeof(paritybits) - 1);
+    server.arg("stopbits").toCharArray(stopbits, sizeof(stopbits) - 1);
+    server.arg("program").toCharArray(program, sizeof(program) - 1);
+    server.arg("mode_select").toCharArray(mode_select, sizeof(mode_select) - 1);
+    server.sendHeader("Location", "setting", true);
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "-1");
+    server.send ( 302, "text/plain", "");  // Empty content inhibits Content-length header so we have to close the socket ourselves.
+    server.client().stop(); // Stop is needed because we sent no content length
+    Serial.println("saving config");
+    DynamicJsonDocument jsonBuffer(1024);
+    jsonBuffer["token"] = sett.TOKEN;
+    jsonBuffer["server"] = sett.SERVER;
+    jsonBuffer["port"] = sett.PORT;
+    jsonBuffer["baudrate"] = baudrate;
+    jsonBuffer["databits"] = databits;
+    jsonBuffer["paritybits"] = paritybits;
+    jsonBuffer["stopbits"] = stopbits;
+    jsonBuffer["program"] = program;
+    jsonBuffer["mode_select"] = mode_select;
+    File configFile = SPIFFS.open("/config.json", "w");
+    if (!configFile) {
+      Serial.println("failed to open config file for writing");
+    }
 
+    serializeJson(jsonBuffer, Serial);
+    serializeJson(jsonBuffer, configFile);
+    configFile.close();
+  }
+  boolean isIp(String str) {
+    for (int i = 0; i < str.length(); i++) {
+      int c = str.charAt(i);
+      if (c != '.' && (c < '0' || c > '9')) {
+        return false;
+      }
+    }
+    return true;
+  }
+  /** IP to String? */
+  String toStringIp(IPAddress ip) {
+    String res = "";
+    for (int i = 0; i < 3; i++) {
+      res += String((ip >> (8 * i)) & 0xFF) + ".";
+    }
+    res += String(((ip >> 8 * 3)) & 0xFF);
+    return res;
+  }
+  boolean captivePortal() {
+    if (!isIp(server.hostHeader()) && server.hostHeader() != (String("TATWeightCapturer")+".local")) {
+      Serial.print("Request redirected to captive portal");
+      server.sendHeader("Location", String("http://") + toStringIp(server.client().localIP()), true);
+      server.send ( 302, "text/plain", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+      server.client().stop(); // Stop is needed because we sent no content length
+      return true;
+    }
+    return false;
+  }
+
+  void handle_NotFound(){
+    if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
+      return;
+    }
+    server.send(404, "text/plain", "Not found");
+  }
+  
   void setup(void) {
     if (SPIFFS.begin()) {
     Serial.println("mounted file system");
@@ -542,6 +655,9 @@ void Task2code( void * pvParameters ) {
           if (jsonBuffer.containsKey("stopbits")) strcpy(stopbits, jsonBuffer["stopbits"]);
           if (jsonBuffer.containsKey("program")) strcpy(program, jsonBuffer["program"]);
           if (jsonBuffer.containsKey("mode_select")) strcpy(mode_select, jsonBuffer["mode_select"]);
+          if (jsonBuffer.containsKey("token")) strcpy(sett.TOKEN, jsonBuffer["token"]);
+          if (jsonBuffer.containsKey("server")) strcpy(sett.SERVER, jsonBuffer["server"]);
+          if (jsonBuffer.containsKey("port")) sett.PORT = jsonBuffer["port"];
         } else {
           Serial.println("failed to load json config");
         }
@@ -626,6 +742,9 @@ void Task2code( void * pvParameters ) {
     if (stopbits_param.getValue() != "") strcpy(stopbits, stopbits_param.getValue());
     if (program_param.getValue() != "") strcpy(program, program_param.getValue());
     if (mode_param.getValue() != "") strcpy(mode_select, mode_param.getValue());
+    if (blynk_Token.getValue() != "") strcpy(sett.TOKEN, blynk_Token.getValue());
+    if (blynk_Server.getValue() != "") strcpy(sett.SERVER, blynk_Server.getValue());
+    if (blynk_Port.getValue() != 0) sett.PORT =  blynk_Port.getValue();
     Serial.println("saving config");
     DynamicJsonDocument jsonBuffer(1024);
     jsonBuffer["baudrate"] = baudrate;
@@ -634,6 +753,9 @@ void Task2code( void * pvParameters ) {
     jsonBuffer["stopbits"] = stopbits;
     jsonBuffer["program"] = program;
     jsonBuffer["mode_select"] = mode_select;
+    jsonBuffer["token"] = sett.TOKEN;
+    jsonBuffer["server"] = sett.SERVER;
+    jsonBuffer["port"] = sett.PORT;
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
       Serial.println("failed to open config file for writing");
@@ -642,7 +764,7 @@ void Task2code( void * pvParameters ) {
     serializeJson(jsonBuffer, Serial);
     serializeJson(jsonBuffer, configFile);
     configFile.close();
-
+    
     configTime(gmtOffset_sec, 0, ntpServer);
     client.setServer( sett.SERVER, sett.PORT );
 
@@ -650,7 +772,25 @@ void Task2code( void * pvParameters ) {
     setupWIFI();
     setupOTA();
 
-
+    if (WiFi.status() != WL_CONNECTED) {
+      /* Put IP Address details */
+      IPAddress local_ip(192,168,1,1);
+      IPAddress gateway(192,168,1,1);
+      IPAddress subnet(255,255,255,0);
+      
+      WiFi.softAP("TATWeightCapturer", "76507650");
+      WiFi.softAPConfig(local_ip, gateway, subnet);
+    }
+    
+    server.on("/", handleRoot);
+    server.on("/setting", handleSetting);
+    server.on("/save_setting", handleSettingSave);
+    server.on("/generate_204", handleRoot);  //Android captive portal. Maybe not needed. Might be handled by notFound handler.
+    server.on("/fwlink", handleRoot);  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
+    server.onNotFound ( handle_NotFound );
+    server.begin();
+    Serial.println("HTTP server started");
+    Serial.println(WiFi.localIP());
 
     runner.init();
     Serial.println("Initialized scheduler");
@@ -751,7 +891,7 @@ void Task2code( void * pvParameters ) {
     rawWeight = "";
 
     runner.execute();
-
+    server.handleClient();
     ArduinoOTA.handle();
   }
 
