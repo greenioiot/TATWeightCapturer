@@ -679,7 +679,7 @@ void Task2code( void * pvParameters ) {
 
     WiFiManagerParameter baudrate_param("baudrate", "Serial Port : Baudrate", baudrate, 8);
     WiFiManagerParameter dpsbits_param("databits", "Serial Port : Data Bits, Parity Bits, Stop Bits", dpsbits, 5);
-    WiFiManagerParameter program_param("program", "Program", program, 2);
+    WiFiManagerParameter program_param("program", "Program", program, 10);
     WiFiManagerParameter mode_param("mode", "Mode (1-10)", mode_select, 3);
     wifiManager.setTimeout(120);
     HeartBeat();
