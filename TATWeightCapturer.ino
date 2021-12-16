@@ -425,7 +425,9 @@ void Task2code( void * pvParameters ) {
 
   void reconnectMqtt()
   {
-    if (client.connect(uint64ToString(chipId), "tatmqtt", "%tatmqttpassword%")) {
+    char char_chipID[20];
+    uint64ToString(chipId).toCharArray(char_chipID, 20);
+    if (client.connect(char_chipID, "tatmqtt", "%tatmqttpassword%")) {
 
 
       Serial.println( F("Connect MQTT Success."));
