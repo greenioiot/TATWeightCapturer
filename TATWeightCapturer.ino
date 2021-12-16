@@ -91,9 +91,9 @@ WebServer server(80);
 struct Settings
 {
   char TOKEN[40] = "";
-  char SERVER[40] = "mqttservice.smartfarmpro.com";
+  char SERVER[40] = "";
   int PORT = 1883;
-  char MODE[60] = "Farm/Cloud/Device/Mode2";
+  char MODE[60] = "";
   uint32_t ip;
 } sett;
 
