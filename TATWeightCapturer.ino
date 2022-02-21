@@ -65,7 +65,7 @@
 
 #include "Free_Fonts.h" // Include the header file attached to this sketch
 
-
+boolean pro_int;
 
 
 
@@ -81,7 +81,7 @@ String deviceToken = "";
 uint64_t chipId = 0;
 String weight = "";
 String rawWeight = "";
-String wifiName = "@WC";
+String wifiName = "";
 float DP = 0.0;
 unsigned long ms;
 unsigned long diffMillis = 0;
@@ -91,9 +91,9 @@ WebServer server(80);
 struct Settings
 {
   char TOKEN[40] = "";
-  char SERVER[40] = "";
+  char SERVER[40] = "mqttservice.smartfarmpro.com";
   int PORT = 1883;
-  char MODE[60] = "";
+  char MODE[60] = "Farm/Cloud/Device/Mode2";
   uint32_t ip;
 } sett;
 
@@ -112,6 +112,19 @@ TFT_eSprite wifiSprite = TFT_eSprite(&tft); // Invoke custom library with defaul
 TFT_eSprite timeSprite = TFT_eSprite(&tft); // Invoke custom library with default width and height
 TFT_eSprite updateSprite = TFT_eSprite(&tft); // Invoke custom library with default width and height
 
+TFT_eSprite ver = TFT_eSprite(&tft); // Invoke custom library with default width and height
+TFT_eSprite countInSecSprite = TFT_eSprite(&tft); // Invoke custom library with default width and height
+
+
+
+unsigned long previousMillis = 0;
+const long interval = 1000;  //millisecond
+unsigned long currentMillis;
+
+
+unsigned long previousRollOver = 0;
+unsigned long intervalRollOver = 1000000000;  //roleover();
+unsigned long currentRollOver;
 
 
 
@@ -119,7 +132,7 @@ Scheduler runner;
 
 float value = 0.0;
 String json = "";
-
+int countInSec = 0;
 
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
@@ -161,16 +174,20 @@ int8_t ramp = 1;
 
 
 
-#define HEADER_WIDTH  160
+#define HEADER_WIDTH  130
 #define HEADER_HEIGHT 30
 #define WEIGHT_WIDTH 160
 #define WEIGHT_HEIGHT 50
-#define TIME_WIDTH  100
+#define TIME_WIDTH  85
 #define TIME_HEIGHT 35
 
 #define WiFi_WIDTH  30
 #define WiFi_HEIGHT 30
 
+#define VER_WIDTH  35
+#define VER_HEIGHT 30
+#define countInSec_WIDTH 30
+#define countInSec_HEIGHT 30
 
 // Pause in milliseconds between screens, change to 0 to time font rendering
 
@@ -188,7 +205,7 @@ void t7showTime();
 Task t2(60000, TASK_FOREVER, &t2CallShowEnv);
 Task t3(360000, TASK_FOREVER, &t3CallConnector);
 //
-Task t4(15000, TASK_FOREVER, &t4CallWatchDog);  //adding task to the chain on creation
+Task t4(180000, TASK_FOREVER, &t4CallWatchDog);  //adding task to the chain on creation
 Task t5(10400000, TASK_FOREVER, &t5CallSendAttribute);  //adding task to the chain on creation
 Task t7(60000, TASK_FOREVER, &t7showTime);
 
@@ -196,22 +213,22 @@ Task t7(60000, TASK_FOREVER, &t7showTime);
 bool shouldSaveConfig = false;
 
 
-  void drawWiFi( )
-  {
+void drawWiFi( )
+{
 
-    //  wifiSprite.fillScreen(TFT_GREEN);
- 
-    if (rssi <= 1)
-      wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi1);
-    if (rssi == 2)
-      wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi2);
-    if (rssi == 3)
-      wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi3);
-    if (rssi >= 4)
-      wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi4);
+  //  wifiSprite.fillScreen(TFT_GREEN);
 
-    wifiSprite.pushSprite(140, 0);
-  }
+  if (rssi <= 1)
+    wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi1);
+  if (rssi == 2)
+    wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi2);
+  if (rssi == 3)
+    wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi3);
+  if (rssi >= 4)
+    wifiSprite.pushImage(0 , 0, wifi1Width, wifi1Height, wifi4);
+
+  wifiSprite.pushSprite(140, 0);
+}
 
 
 
@@ -221,410 +238,424 @@ void Task2code( void * pvParameters ) {
 
   for (;;) {
     //    delay(2000);
-    
+
     ms = millis();
     if (ms % 1000 == 0)
     {
-      
+
       rssi = map(WiFi.RSSI(), -90, -20, 1, 4);
-      
+
     }
   }
-}  
-  class IPAddressParameter : public WiFiManagerParameter
-  {
-    public:
-      IPAddressParameter(const char *id, const char *placeholder, IPAddress address)
-        : WiFiManagerParameter("")
-      {
-        init(id, placeholder, address.toString().c_str(), 16, "", WFM_LABEL_BEFORE);
-      }
-
-      bool getValue(IPAddress &ip)
-      {
-        return ip.fromString(WiFiManagerParameter::getValue());
-      }
-  };
-
-  class IntParameter : public WiFiManagerParameter
-  {
-    public:
-      IntParameter(const char *id, const char *placeholder, long value, const uint8_t length = 10)
-        : WiFiManagerParameter("")
-      {
-        init(id, placeholder, String(value).c_str(), length, "", WFM_LABEL_BEFORE);
-      }
-
-      long getValue()
-      {
-        return String(WiFiManagerParameter::getValue()).toInt();
-      }
-  };
-
-
-
-  char  char_to_byte(char c)
-  {
-    if ((c >= '0') && (c <= '9'))
+}
+class IPAddressParameter : public WiFiManagerParameter
+{
+  public:
+    IPAddressParameter(const char *id, const char *placeholder, IPAddress address)
+      : WiFiManagerParameter("")
     {
-      return (c - 0x30);
+      init(id, placeholder, address.toString().c_str(), 16, "", WFM_LABEL_BEFORE);
     }
-    if ((c >= 'A') && (c <= 'F'))
+
+    bool getValue(IPAddress &ip)
     {
-      return (c - 55);
+      return ip.fromString(WiFiManagerParameter::getValue());
     }
-  }
+};
 
-  String read_String(char add)
-  {
-    int i;
-    char data[100]; //Max 100 Bytes
-    int len = 0;
-    unsigned char k;
-    k = EEPROM.read(add);
-    while (k != '\0' && len < 500) //Read until null character
+class IntParameter : public WiFiManagerParameter
+{
+  public:
+    IntParameter(const char *id, const char *placeholder, long value, const uint8_t length = 10)
+      : WiFiManagerParameter("")
     {
-      k = EEPROM.read(add + len);
-      data[len] = k;
-      len++;
+      init(id, placeholder, String(value).c_str(), length, "", WFM_LABEL_BEFORE);
     }
-    data[len] = '\0';
 
-    return String(data);
-  }
+    long getValue()
+    {
+      return String(WiFiManagerParameter::getValue()).toInt();
+    }
+};
 
 
-  void getChipID() {
-    chipId = ESP.getEfuseMac(); //The chip ID is essentially its MAC address(length: 6 bytes).
-    Serial.printf("ESP32ChipID=%04X", (uint16_t)(chipId >> 32)); //print High 2 bytes
-    Serial.printf("%08X\n", (uint32_t)chipId); //print Low 4bytes.
 
-  }
-
-  void setupOTA()
+char  char_to_byte(char c)
+{
+  if ((c >= '0') && (c <= '9'))
   {
-    //Port defaults to 8266
-    //ArduinoOTA.setPort(8266);
-
-    //Hostname defaults to esp8266-[ChipID]
-    ArduinoOTA.setHostname(uint64ToString(chipId).c_str());
-
-    //No authentication by default
-    ArduinoOTA.setPassword(PASSWORD);
-
-    //Password can be set with it's md5 value as well
-    //MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-    //ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
-    ArduinoOTA.onStart([]()
-    {
-      Serial.println("Start Updating....");
-
-      Serial.printf("Start Updating....Type:%s\n", (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem");
-    });
-
-    ArduinoOTA.onEnd([]()
-    {
-
-      Serial.println("Update Complete!");
-
-      ESP.restart();
-    });
-
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
-    {
-      String pro = String(progress / (total / 100)) + "%";
-      int progressbar = (progress / (total / 100));
-      //int progressbar = (progress / 5) % 100;
-      //int pro = progress / (total / 100);
-
-      drawUpdate(progressbar, 110, 0);
-
-
-      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    });
-
-    ArduinoOTA.onError([](ota_error_t error)
-    {
-      Serial.printf("Error[%u]: ", error);
-      String info = "Error Info:";
-      switch (error)
-      {
-        case OTA_AUTH_ERROR:
-          info += "Auth Failed";
-          Serial.println("Auth Failed");
-          break;
-
-        case OTA_BEGIN_ERROR:
-          info += "Begin Failed";
-          Serial.println("Begin Failed");
-          break;
-
-        case OTA_CONNECT_ERROR:
-          info += "Connect Failed";
-          Serial.println("Connect Failed");
-          break;
-
-        case OTA_RECEIVE_ERROR:
-          info += "Receive Failed";
-          Serial.println("Receive Failed");
-          break;
-
-        case OTA_END_ERROR:
-          info += "End Failed";
-          Serial.println("End Failed");
-          break;
-      }
-
-
-      Serial.println(info);
-      ESP.restart();
-    });
-
-    ArduinoOTA.begin();
+    return (c - 0x30);
   }
-
-  String uint64ToString(uint64_t input) {
-    String result = "";
-    uint8_t base = 10;
-
-    do {
-      char c = input % base;
-      input /= base;
-
-      if (c < 10)
-        c += '0';
-      else
-        c += 'A' - 10;
-      result = c + result;
-    } while (input);
-    return result;
-  }
-
-
-  void setupWIFI()
+  if ((c >= 'A') && (c <= 'F'))
   {
-    WiFi.setHostname(uint64ToString(chipId).c_str());
+    return (c - 55);
+  }
+}
 
-    byte count = 0;
-    while (WiFi.status() != WL_CONNECTED && count < 10)
+String read_String(char add)
+{
+  int i;
+  char data[100]; //Max 100 Bytes
+  int len = 0;
+  unsigned char k;
+  k = EEPROM.read(add);
+  while (k != '\0' && len < 500) //Read until null character
+  {
+    k = EEPROM.read(add + len);
+    data[len] = k;
+    len++;
+  }
+  data[len] = '\0';
+
+  return String(data);
+}
+
+
+void getChipID() {
+  chipId = ESP.getEfuseMac(); //The chip ID is essentially its MAC address(length: 6 bytes).
+  Serial.printf("ESP32ChipID=%04X", (uint16_t)(chipId >> 32)); //print High 2 bytes
+  Serial.printf("%08X\n", (uint32_t)chipId); //print Low 4bytes.
+
+}
+
+void setupOTA()
+{
+  //Port defaults to 8266
+  //ArduinoOTA.setPort(8266);
+
+  //Hostname defaults to esp8266-[ChipID]
+  ArduinoOTA.setHostname(uint64ToString(chipId).c_str());
+
+  //No authentication by default
+  ArduinoOTA.setPassword(PASSWORD);
+
+  //Password can be set with it's md5 value as well
+  //MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
+  //ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+  ArduinoOTA.onStart([]()
+  {
+    Serial.println("Start Updating....");
+
+    Serial.printf("Start Updating....Type:%s\n", (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem");
+  });
+
+  ArduinoOTA.onEnd([]()
+  {
+
+    Serial.println("Update Complete!");
+
+    ESP.restart();
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+  {
+    String pro = String(progress / (total / 100)) + "%";
+    int progressbar = (progress / (total / 100));
+    //int progressbar = (progress / 5) % 100;
+    //int pro = progress / (total / 100);
+
+    drawUpdate(progressbar, 110, 0);
+
+
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+
+  ArduinoOTA.onError([](ota_error_t error)
+  {
+    Serial.printf("Error[%u]: ", error);
+    String info = "Error Info:";
+    switch (error)
     {
-      count ++;
-      delay(500);
-      Serial.print(".");
+      case OTA_AUTH_ERROR:
+        info += "Auth Failed";
+        Serial.println("Auth Failed");
+        break;
+
+      case OTA_BEGIN_ERROR:
+        info += "Begin Failed";
+        Serial.println("Begin Failed");
+        break;
+
+      case OTA_CONNECT_ERROR:
+        info += "Connect Failed";
+        Serial.println("Connect Failed");
+        break;
+
+      case OTA_RECEIVE_ERROR:
+        info += "Receive Failed";
+        Serial.println("Receive Failed");
+        break;
+
+      case OTA_END_ERROR:
+        info += "End Failed";
+        Serial.println("End Failed");
+        break;
     }
 
 
-    if (WiFi.status() == WL_CONNECTED)
-      Serial.println("Connecting...OK.");
+    Serial.println(info);
+    ESP.restart();
+  });
+
+  ArduinoOTA.begin();
+}
+
+String uint64ToString(uint64_t input) {
+  String result = "";
+  uint8_t base = 10;
+
+  do {
+    char c = input % base;
+    input /= base;
+
+    if (c < 10)
+      c += '0';
     else
-      Serial.println("Connecting...Failed");
+      c += 'A' - 10;
+    result = c + result;
+  } while (input);
+  return result;
+}
 
-    reconnectMqtt();
-  }
 
-  void reconnectMqtt()
+void setupWIFI()
+{
+  WiFi.setHostname(uint64ToString(chipId).c_str());
+
+  byte count = 0;
+  while (WiFi.status() != WL_CONNECTED && count < 10)
   {
-    char char_chipID[20];
-    uint64ToString(chipId).toCharArray(char_chipID, 20);
-    if (client.connect(char_chipID, "tatmqtt", "%tatmqttpassword%")) {
-
-
-      Serial.println( F("Connect MQTT Success."));
-
-    } else {
-      Serial.println("Not connected");
-    }
+    count ++;
+    delay(500);
+    Serial.print(".");
   }
-  void writeString(char add, String data)
+
+
+  if (WiFi.status() == WL_CONNECTED)
+    Serial.println("Connecting...OK.");
+  else
+    Serial.println("Connecting...Failed");
+
+  reconnectMqtt();
+}
+
+void reconnectMqtt()
+{
+  char char_chipID[20];
+  uint64ToString(chipId).toCharArray(char_chipID, 20);
+  if (client.connect(char_chipID, "tatmqtt", "%tatmqttpassword%")) {
+
+
+    Serial.println( F("Connect MQTT Success."));
+
+  } else {
+    Serial.println("Not connected");
+  }
+}
+void writeString(char add, String data)
+{
+  int _size = data.length();
+  int i;
+  for (i = 0; i < _size; i++)
   {
-    int _size = data.length();
-    int i;
-    for (i = 0; i < _size; i++)
-    {
-      EEPROM.write(add + i, data[i]);
-    }
-    EEPROM.write(add + _size, '\0'); //Add termination null character for String Data
-    EEPROM.commit();
+    EEPROM.write(add + i, data[i]);
   }
+  EEPROM.write(add + _size, '\0'); //Add termination null character for String Data
+  EEPROM.commit();
+}
 
-  void _writeEEPROM(String data) {
-    //Serial.print("Writing Data:");
-    //Serial.println(data);
-    writeString(10, data);  //Address 10 and String type data
+void _writeEEPROM(String data) {
+  //Serial.print("Writing Data:");
+  //Serial.println(data);
+  writeString(10, data);  //Address 10 and String type data
+  delay(10);
+}
+
+
+void splash() {
+
+  tft.init();
+  // Swap the colour byte order when rendering
+  tft.setSwapBytes(true);
+  tft.setRotation(1);  // landscape
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(5, (tft.height() / 2) - 50, 1);
+
+  tft.setTextColor(TFT_YELLOW);
+
+
+  tft.setTextFont(4);
+  tft.println("Weight");
+  tft.println("    Capture");
+  tft.println("        by");
+  tft.println("            TAT");
+
+  delay(5000);
+  //  tft.setTextPadding(180);
+
+
+  Serial.println(F("Start..."));
+  for ( int i = 0; i < 250; i++)
+  {
+    tft.drawString(".", 1 + 2 * i, 300, GFXFF);
     delay(10);
+    //    Serial.println(i);
+  }
+  Serial.println("end");
+}
+
+
+void _initLCD() {
+  tft.fillScreen(TFT_BLACK);
+  // TFT
+  splash();
+  // MLX
+  mlx.begin();
+}
+
+
+void configModeCallback (WiFiManager * myWiFiManager) {
+  Serial.println("Entered config mode");
+  Serial.println(WiFi.softAPIP());
+  //if you used auto generated SSID, print it
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+}
+
+void saveConfigCallback () {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+  Serial.print("saveConfigCallback:");
+  Serial.println(sett.TOKEN);
+}
+
+char baudrate[8];
+char dpsbits[5];
+char program[10];
+char mode_select[3];
+void handleRoot() {
+  if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
+    return;
+  }
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+  server.sendContent("<!DOCTYPE html><html lang=\"en\"><head> <meta charset=\"UTF-8\"> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Setting</title></head><body> <div style=\"text-align: center;\"> <h1>Setting</h1><a style=\"background-color: red;border: 0;padding: 10px 20px;color: white;font-weight: 600;border-radius: 5px;\" href=\"/setting\">Setting</a> </div></body></html>");
+  server.client().stop(); // Stop is needed because we sent no content length
+}
+void handleSetting() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+  server.sendContent("<!DOCTYPE html><html lang=\"en\"><head> <meta charset=\"UTF-8\"> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Setting</title></head><body> <h1>Setting</h1> <form method=\"POST\" action=\"save_setting\"> <label for=\"token\">Device Token</label> <input type=\"text\" name=\"token\" ");
+  if (strcmp(sett.TOKEN, "") != 0) {
+    server.sendContent("value=\"" + String(sett.TOKEN) + "\"");
+  }
+  server.sendContent("><br><label for=\"server\">Server</label><input type=\"text\" name=\"server\" ");
+  if (strcmp(sett.SERVER, "") != 0) {
+    server.sendContent("value=\"" + String(sett.SERVER) + "\"");
+  }
+  server.sendContent("><br><label for=\"port\">Port</label><input type=\"text\" name=\"port\" ");
+  if (sett.PORT != 0) {
+    server.sendContent("value=\"" + String(sett.PORT) + "\"");
+  }
+  server.sendContent("><br><label for=\"baudrate\">Serial Port : Baudrate</label><input type=\"text\" name=\"baudrate\" ");
+  if (strcmp(baudrate, "") != 0) {
+    server.sendContent("value=\"" + String(baudrate) + "\"");
+  }
+  server.sendContent("><br><label for=\"dpsbits\">Serial Port : Data Bits, Parity Bits, Stop Bits</label><input type=\"text\" name=\"dpsbits\" ");
+  if (strcmp(dpsbits, "") != 0) {
+    server.sendContent("value=\"" + String(dpsbits) + "\"");
+  }
+  server.sendContent("><br><label for=\"program\">Program</label><input type=\"text\" name=\"program\" ");
+  if (strcmp(program, "") != 0) {
+    server.sendContent("value=\"" + String(program) + "\"");
+  }
+  server.sendContent("><br><label for=\"mode_select\">Mode (1-10)</label><input type=\"text\" name=\"mode_select\" ");
+  if (strcmp(mode_select, "") != 0) {
+    server.sendContent("value=\"" + String(mode_select) + "\"");
+  }
+  server.sendContent("><br><input type=\"submit\" value=\"Save\"></form></body></html>");
+  server.client().stop();
+}
+void handleSettingSave() {
+  Serial.println("setting save");
+  server.arg("token").toCharArray(sett.TOKEN, sizeof(sett.TOKEN));
+  server.arg("server").toCharArray(sett.SERVER, sizeof(sett.SERVER));
+  sett.PORT = server.arg("port").toInt();
+  server.arg("baudrate").toCharArray(baudrate, sizeof(baudrate));
+  server.arg("dpsbits").toCharArray(dpsbits, sizeof(dpsbits));
+  server.arg("program").toCharArray(program, sizeof(program));
+  server.arg("mode_select").toCharArray(mode_select, sizeof(mode_select));
+  server.sendHeader("Location", "setting", true);
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+  server.send ( 302, "text/plain", "");  // Empty content inhibits Content-length header so we have to close the socket ourselves.
+  server.client().stop(); // Stop is needed because we sent no content length
+  Serial.println("saving config");
+  DynamicJsonDocument jsonBuffer(1024);
+  jsonBuffer["token"] = sett.TOKEN;
+  jsonBuffer["server"] = sett.SERVER;
+  jsonBuffer["port"] = sett.PORT;
+  jsonBuffer["baudrate"] = baudrate;
+  jsonBuffer["dpsbits"] = dpsbits;
+  jsonBuffer["program"] = program;
+  jsonBuffer["mode_select"] = mode_select;
+  File configFile = SPIFFS.open("/config.json", "w");
+  if (!configFile) {
+    Serial.println("failed to open config file for writing");
   }
 
-
-  void splash() {
-
-    tft.init();
-    // Swap the colour byte order when rendering
-    tft.setSwapBytes(true);
-    tft.setRotation(1);  // landscape
-
-    tft.fillScreen(TFT_BLACK);
-    tft.setCursor(5, (tft.height() / 2) - 50, 1);
-
-    tft.setTextColor(TFT_YELLOW);
-
-
-    tft.setTextFont(4);
-    tft.println("Weight");
-    tft.println("    Capture");
-    tft.println("        by");
-    tft.println("            TAT");
-
-    delay(5000);
-    //  tft.setTextPadding(180);
-
-
-    Serial.println(F("Start..."));
-    for ( int i = 0; i < 250; i++)
-    {
-      tft.drawString(".", 1 + 2 * i, 300, GFXFF);
-      delay(10);
-      //    Serial.println(i);
+  serializeJson(jsonBuffer, Serial);
+  serializeJson(jsonBuffer, configFile);
+  configFile.close();
+  String topic = "Farm/Cloud/Device/Mode" + String(mode_select) + "/" + deviceToken;
+  topic.toCharArray(sett.MODE, sizeof(sett.MODE));
+}
+boolean isIp(String str) {
+  for (int i = 0; i < str.length(); i++) {
+    int c = str.charAt(i);
+    if (c != '.' && (c < '0' || c > '9')) {
+      return false;
     }
-    Serial.println("end");
   }
-
-
-  void _initLCD() {
-    tft.fillScreen(TFT_BLACK);
-    // TFT
-    splash();
-    // MLX
-    mlx.begin();
+  return true;
+}
+/** IP to String? */
+String toStringIp(IPAddress ip) {
+  String res = "";
+  for (int i = 0; i < 3; i++) {
+    res += String((ip >> (8 * i)) & 0xFF) + ".";
   }
-
-
-  void configModeCallback (WiFiManager * myWiFiManager) {
-    Serial.println("Entered config mode");
-    Serial.println(WiFi.softAPIP());
-    //if you used auto generated SSID, print it
-    Serial.println(myWiFiManager->getConfigPortalSSID());
-  }
-
-  void saveConfigCallback () {
-    Serial.println("Should save config");
-    shouldSaveConfig = true;
-    Serial.print("saveConfigCallback:");
-    Serial.println(sett.TOKEN);
-  }
-
-  char baudrate[8];
-  char dpsbits[5];
-  char program[10];
-  char mode_select[3];
-  void handleRoot() {
-    if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
-      return;
-    }
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "-1");
-    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    server.send(200, "text/html", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
-    server.sendContent("<!DOCTYPE html><html lang=\"en\"><head> <meta charset=\"UTF-8\"> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Setting</title></head><body> <div style=\"text-align: center;\"> <h1>Setting</h1><a style=\"background-color: red;border: 0;padding: 10px 20px;color: white;font-weight: 600;border-radius: 5px;\" href=\"/setting\">Setting</a> </div></body></html>");
+  res += String(((ip >> 8 * 3)) & 0xFF);
+  return res;
+}
+boolean captivePortal() {
+  if (!isIp(server.hostHeader()) && server.hostHeader() != (String("TATWeightCapturer") + ".local")) {
+    Serial.print("Request redirected to captive portal");
+    server.sendHeader("Location", String("http://") + toStringIp(server.client().localIP()), true);
+    server.send ( 302, "text/plain", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
     server.client().stop(); // Stop is needed because we sent no content length
-  }
-  void handleSetting() {
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "-1");
-    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    server.send(200, "text/html", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
-    server.sendContent("<!DOCTYPE html><html lang=\"en\"><head> <meta charset=\"UTF-8\"> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Setting</title></head><body> <h1>Setting</h1> <form method=\"POST\" action=\"save_setting\"> <label for=\"token\">Device Token</label> <input type=\"text\" name=\"token\" ");
-    if (strcmp(sett.TOKEN,"") != 0) { server.sendContent("value=\"" + String(sett.TOKEN) + "\""); }
-    server.sendContent("><br><label for=\"server\">Server</label><input type=\"text\" name=\"server\" ");
-    if (strcmp(sett.SERVER,"") != 0) { server.sendContent("value=\"" + String(sett.SERVER) + "\""); }
-    server.sendContent("><br><label for=\"port\">Port</label><input type=\"text\" name=\"port\" ");
-    if (sett.PORT != 0) { server.sendContent("value=\"" + String(sett.PORT) + "\""); }
-    server.sendContent("><br><label for=\"baudrate\">Serial Port : Baudrate</label><input type=\"text\" name=\"baudrate\" ");
-    if (strcmp(baudrate,"") != 0) { server.sendContent("value=\"" + String(baudrate) + "\""); }
-    server.sendContent("><br><label for=\"dpsbits\">Serial Port : Data Bits, Parity Bits, Stop Bits</label><input type=\"text\" name=\"dpsbits\" ");
-    if (strcmp(dpsbits,"") != 0) { server.sendContent("value=\"" + String(dpsbits) + "\""); }
-    server.sendContent("><br><label for=\"program\">Program</label><input type=\"text\" name=\"program\" ");
-    if (strcmp(program,"") != 0) { server.sendContent("value=\"" + String(program) + "\""); }
-    server.sendContent("><br><label for=\"mode_select\">Mode (1-10)</label><input type=\"text\" name=\"mode_select\" ");
-    if (strcmp(mode_select,"") != 0) { server.sendContent("value=\"" + String(mode_select) + "\""); }
-    server.sendContent("><br><input type=\"submit\" value=\"Save\"></form></body></html>");
-    server.client().stop();
-  }
-  void handleSettingSave() {
-    Serial.println("setting save");
-    server.arg("token").toCharArray(sett.TOKEN, sizeof(sett.TOKEN));
-    server.arg("server").toCharArray(sett.SERVER, sizeof(sett.SERVER));
-    sett.PORT = server.arg("port").toInt();
-    server.arg("baudrate").toCharArray(baudrate, sizeof(baudrate));
-    server.arg("dpsbits").toCharArray(dpsbits, sizeof(dpsbits));
-    server.arg("program").toCharArray(program, sizeof(program));
-    server.arg("mode_select").toCharArray(mode_select, sizeof(mode_select));
-    server.sendHeader("Location", "setting", true);
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "-1");
-    server.send ( 302, "text/plain", "");  // Empty content inhibits Content-length header so we have to close the socket ourselves.
-    server.client().stop(); // Stop is needed because we sent no content length
-    Serial.println("saving config");
-    DynamicJsonDocument jsonBuffer(1024);
-    jsonBuffer["token"] = sett.TOKEN;
-    jsonBuffer["server"] = sett.SERVER;
-    jsonBuffer["port"] = sett.PORT;
-    jsonBuffer["baudrate"] = baudrate;
-    jsonBuffer["dpsbits"] = dpsbits;
-    jsonBuffer["program"] = program;
-    jsonBuffer["mode_select"] = mode_select;
-    File configFile = SPIFFS.open("/config.json", "w");
-    if (!configFile) {
-      Serial.println("failed to open config file for writing");
-    }
-
-    serializeJson(jsonBuffer, Serial);
-    serializeJson(jsonBuffer, configFile);
-    configFile.close();
-    String topic = "Farm/Cloud/Device/Mode" + String(mode_select) + "/" + String(sett.TOKEN);
-    topic.toCharArray(sett.MODE, sizeof(sett.MODE));
-  }
-  boolean isIp(String str) {
-    for (int i = 0; i < str.length(); i++) {
-      int c = str.charAt(i);
-      if (c != '.' && (c < '0' || c > '9')) {
-        return false;
-      }
-    }
     return true;
   }
-  /** IP to String? */
-  String toStringIp(IPAddress ip) {
-    String res = "";
-    for (int i = 0; i < 3; i++) {
-      res += String((ip >> (8 * i)) & 0xFF) + ".";
-    }
-    res += String(((ip >> 8 * 3)) & 0xFF);
-    return res;
-  }
-  boolean captivePortal() {
-    if (!isIp(server.hostHeader()) && server.hostHeader() != (String("TATWeightCapturer")+".local")) {
-      Serial.print("Request redirected to captive portal");
-      server.sendHeader("Location", String("http://") + toStringIp(server.client().localIP()), true);
-      server.send ( 302, "text/plain", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
-      server.client().stop(); // Stop is needed because we sent no content length
-      return true;
-    }
-    return false;
-  }
+  return false;
+}
 
-  void handle_NotFound(){
-    if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
-      return;
-    }
-    server.send(404, "text/plain", "Not found");
+void handle_NotFound() {
+  if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
+    return;
   }
-  
-  void setup(void) {
-    if (SPIFFS.begin()) {
+  server.send(404, "text/plain", "Not found");
+}
+
+void setup(void) {
+  if (SPIFFS.begin()) {
     Serial.println("mounted file system");
     if (SPIFFS.exists("/config.json")) {
       //file exists, reading and loading
@@ -658,435 +689,483 @@ void Task2code( void * pvParameters ) {
   } else {
     Serial.println("failed to mount FS");
   }
-    Serial.begin(115200);
-    // make the pins outputs:
-    pinMode(15, OUTPUT);
-    digitalWrite(15, HIGH);
+  Serial.begin(115200);
+  // make the pins outputs:
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
 
-    delay(1000);
-    Serial.println("Start");
+  delay(1000);
+  Serial.println("Start");
 
-    EEPROM.begin(512);
-    _initLCD();
-    if (EEPROM.read(10) == 255 ) {
-      _writeEEPROM("147.50.151.130");
-    }
-    getChipID();
-    tft.setTextSize(1);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_GREEN);
-    tft.drawString("WiFi Setting", 5, (tft.height() / 2) - 30, 4);
-    tft.drawString("(120 Sec)", 40, (tft.height() / 2) + 5, 4);
-    tft.setTextColor(TFT_BLUE);
-
-    WiFiManagerParameter baudrate_param("baudrate", "Serial Port : Baudrate", baudrate, 8);
-    WiFiManagerParameter dpsbits_param("databits", "Serial Port : Data Bits, Parity Bits, Stop Bits", dpsbits, 5);
-    WiFiManagerParameter program_param("program", "Program", program, 10);
-    WiFiManagerParameter mode_param("mode", "Mode (1-10)", mode_select, 3);
-    wifiManager.setTimeout(120);
-    HeartBeat();
-    wifiManager.setAPCallback(configModeCallback);
-    std::vector<const char *> menu = {"wifi", "info", "sep", "restart", "exit"};
-    wifiManager.setMenu(menu);
-    wifiManager.setClass("invert");
-    wifiManager.setConfigPortalTimeout(120); // auto close configportal after n seconds
-    wifiManager.setAPClientCheck(true); // avoid timeout if client connected to softap
-    wifiManager.setBreakAfterConfig(true);   // always exit configportal even if wifi save fails
-
-    WiFiManagerParameter blnk_Text("<b>Device setup.</b> <br>");
-    sett.TOKEN[39] = '\0';   //add null terminator at the end cause overflow
-    sett.SERVER[39] = '\0';   //add null terminator at the end cause overflow
-    WiFiManagerParameter blynk_Token( "blynktoken", "device Token",  sett.TOKEN, 40);
-    WiFiManagerParameter blynk_Server( "blynkserver", "Server",  sett.SERVER, 40);
-    IntParameter blynk_Port( "blynkport", "Port",  sett.PORT);
-    HeartBeat();
-    wifiManager.addParameter( &blnk_Text );
-    wifiManager.addParameter( &blynk_Token );
-    wifiManager.addParameter( &blynk_Server );
-    wifiManager.addParameter( &blynk_Port );
-    wifiManager.addParameter(&baudrate_param);
-    wifiManager.addParameter(&dpsbits_param);
-    wifiManager.addParameter(&program_param);
-    wifiManager.addParameter(&mode_param);
-
-
-    //set config save notify callback
-    wifiManager.setSaveConfigCallback(saveConfigCallback);
-
-
-
-
-    wifiName.concat(uint64ToString(chipId));
-    if (!wifiManager.autoConnect(wifiName.c_str())) {
-      Serial.println("failed to connect and hit timeout");
-
-
-    }
-    deviceToken = wifiName.c_str();
-    if (baudrate_param.getValue() != "") strcpy(baudrate, baudrate_param.getValue());
-    if (dpsbits_param.getValue() != "") strcpy(dpsbits, dpsbits_param.getValue());
-    if (program_param.getValue() != "") strcpy(program, program_param.getValue());
-    if (mode_param.getValue() != "") strcpy(mode_select, mode_param.getValue());
-    if (blynk_Token.getValue() != "") strcpy(sett.TOKEN, blynk_Token.getValue());
-    if (blynk_Server.getValue() != "") strcpy(sett.SERVER, blynk_Server.getValue());
-    if (blynk_Port.getValue() != 0) sett.PORT =  blynk_Port.getValue();
-    Serial.println("saving config");
-    DynamicJsonDocument jsonBuffer(1024);
-    jsonBuffer["baudrate"] = baudrate;
-    jsonBuffer["dpsbits"] = dpsbits;
-    jsonBuffer["program"] = program;
-    jsonBuffer["mode_select"] = mode_select;
-    jsonBuffer["token"] = sett.TOKEN;
-    jsonBuffer["server"] = sett.SERVER;
-    jsonBuffer["port"] = sett.PORT;
-    File configFile = SPIFFS.open("/config.json", "w");
-    if (!configFile) {
-      Serial.println("failed to open config file for writing");
-    }
-
-    serializeJson(jsonBuffer, Serial);
-    serializeJson(jsonBuffer, configFile);
-    configFile.close();
-    int dps_int;
-    if (strcmp(dpsbits,"5N1") == 0) dps_int = 134217744;
-    else if (strcmp(dpsbits,"6N1") == 0) dps_int = 134217748;
-    else if (strcmp(dpsbits,"7N1") == 0) dps_int = 134217752;
-    else if (strcmp(dpsbits,"8N1") == 0) dps_int = 134217756;
-    else if (strcmp(dpsbits,"5N2") == 0) dps_int = 134217776;
-    else if (strcmp(dpsbits,"6N2") == 0) dps_int = 134217780;
-    else if (strcmp(dpsbits,"7N2") == 0) dps_int = 134217784;
-    else if (strcmp(dpsbits,"8N2") == 0) dps_int = 134217788;
-    else if (strcmp(dpsbits,"5E1") == 0) dps_int = 134217746;
-    else if (strcmp(dpsbits,"6E1") == 0) dps_int = 134217750;
-    else if (strcmp(dpsbits,"7E1") == 0) dps_int = 134217754;
-    else if (strcmp(dpsbits,"8E1") == 0) dps_int = 134217758;
-    else if (strcmp(dpsbits,"5E2") == 0) dps_int = 134217778;
-    else if (strcmp(dpsbits,"6E2") == 0) dps_int = 134217782;
-    else if (strcmp(dpsbits,"7E2") == 0) dps_int = 134217786;
-    else if (strcmp(dpsbits,"8E2") == 0) dps_int = 134217790;
-    else if (strcmp(dpsbits,"5O1") == 0) dps_int = 134217747;
-    else if (strcmp(dpsbits,"6O1") == 0) dps_int = 134217751;
-    else if (strcmp(dpsbits,"7O1") == 0) dps_int = 134217755;
-    else if (strcmp(dpsbits,"8O1") == 0) dps_int = 134217759;
-    else if (strcmp(dpsbits,"5O2") == 0) dps_int = 134217779;
-    else if (strcmp(dpsbits,"6O2") == 0) dps_int = 134217783;
-    else if (strcmp(dpsbits,"7O2") == 0) dps_int = 134217787;
-    else if (strcmp(dpsbits,"6O2") == 0) dps_int = 134217791;
-    hwSerial.begin(atoi(baudrate), dps_int, SERIAL1_RXPIN, SERIAL1_TXPIN);
-    String topic = "Farm/Cloud/Device/Mode" + String(mode_select) + "/" + String(sett.TOKEN);
-    topic.toCharArray(sett.MODE, sizeof(sett.MODE));
-    configTime(gmtOffset_sec, 0, ntpServer);
-    client.setServer( sett.SERVER, sett.PORT );
-
-
-    setupWIFI();
-    setupOTA();
-
-    if (WiFi.status() != WL_CONNECTED) {
-      /* Put IP Address details */
-      IPAddress local_ip(192,168,1,1);
-      IPAddress gateway(192,168,1,1);
-      IPAddress subnet(255,255,255,0);
-      
-      WiFi.softAP("TATWeightCapturer", "76507650");
-      WiFi.softAPConfig(local_ip, gateway, subnet);
-    }
-    
-    server.on("/", handleRoot);
-    server.on("/setting", handleSetting);
-    server.on("/save_setting", handleSettingSave);
-    server.on("/generate_204", handleRoot);  //Android captive portal. Maybe not needed. Might be handled by notFound handler.
-    server.on("/fwlink", handleRoot);  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
-    server.onNotFound ( handle_NotFound );
-    server.begin();
-    Serial.println("HTTP server started");
-    Serial.println(WiFi.localIP());
-
-    runner.init();
-    Serial.println("Initialized scheduler");
-
-
-    runner.addTask(t2);
-    //  Serial.println("added t2");
-    runner.addTask(t3);
-    //  Serial.println("added t3");
-    runner.addTask(t4);
-    //  Serial.println("added t4");
-    //  runner.addTask(t6);
-    runner.addTask(t7);
-    delay(2000);
-
-    t2.enable();
-    //  Serial.println("Enabled t2");
-    t3.enable();
-    //  Serial.println("Enabled t3");
-    t4.enable();
-    //  Serial.println("Enabled t4");
-    //  t6.enable();
-    t7.enable();
-
-    //  Serial.println("Initialized scheduler");
-    tft.begin();
-
-    tft.setRotation(1);
-    tft.fillScreen(TFT_BLACK);
-
-    weightSprite.createSprite(WEIGHT_WIDTH, WEIGHT_HEIGHT);
-    weightSprite.fillSprite(TFT_BLACK);
-
-    headerSprite.createSprite(HEADER_WIDTH, HEADER_HEIGHT);
-    headerSprite.fillSprite(TFT_BLACK);
-
-    wifiSprite.createSprite(WiFi_WIDTH, WiFi_HEIGHT);
-    wifiSprite.fillSprite(TFT_BLACK);
-
-    timeSprite.createSprite(TIME_WIDTH, TIME_HEIGHT);
-    timeSprite.fillSprite(TFT_BLACK);
-
-
-
-    drawWiFi();
-    drawTime();
-    
-    header(deviceToken.c_str());
-
-    //create a task that will be executed in the Task2code() function, with priority 1 and executed on core 1
-    xTaskCreatePinnedToCore(
-      Task2code,   /* Task function. */
-      "Task2",     /* name of task. */
-      10000,       /* Stack size of task */
-      NULL,        /* parameter of the task */
-      1,           /* priority of the task */
-      &Task2,      /* Task handle to keep track of created task */
-      1);          /* pin task to core 1 */
-    delay(500);
-
+  EEPROM.begin(512);
+  _initLCD();
+  if (EEPROM.read(10) == 255 ) {
+    _writeEEPROM("147.50.151.130");
   }
+  getChipID();
+  tft.setTextSize(1);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_GREEN);
+  tft.drawString("WiFi Setting", 5, (tft.height() / 2) - 30, 4);
+  tft.drawString("(120 Sec)", 40, (tft.height() / 2) + 5, 4);
+  tft.setTextColor(TFT_BLUE);
+
+  WiFiManagerParameter baudrate_param("baudrate", "Serial Port : Baudrate", baudrate, 8);
+  WiFiManagerParameter dpsbits_param("databits", "Serial Port : Data Bits, Parity Bits, Stop Bits", dpsbits, 5);
+  WiFiManagerParameter program_param("program", "Program", program, 10);
+  WiFiManagerParameter mode_param("mode", "Mode (1-10)", mode_select, 3);
+  wifiManager.setTimeout(120);
+  HeartBeat();
+  wifiManager.setAPCallback(configModeCallback);
+  std::vector<const char *> menu = {"wifi", "info", "sep", "restart", "exit"};
+  wifiManager.setMenu(menu);
+  wifiManager.setClass("invert");
+  wifiManager.setConfigPortalTimeout(120); // auto close configportal after n seconds
+  wifiManager.setAPClientCheck(true); // avoid timeout if client connected to softap
+  wifiManager.setBreakAfterConfig(true);   // always exit configportal even if wifi save fails
+
+  WiFiManagerParameter blnk_Text("<b>Device setup.</b> <br>");
+  sett.TOKEN[39] = '\0';   //add null terminator at the end cause overflow
+  sett.SERVER[39] = '\0';   //add null terminator at the end cause overflow
+  WiFiManagerParameter blynk_Token( "blynktoken", "device Token",  sett.TOKEN, 40);
+  WiFiManagerParameter blynk_Server( "blynkserver", "Server",  sett.SERVER, 40);
+  IntParameter blynk_Port( "blynkport", "Port",  sett.PORT);
+  HeartBeat();
+  wifiManager.addParameter( &blnk_Text );
+  wifiManager.addParameter( &blynk_Token );
+  wifiManager.addParameter( &blynk_Server );
+  wifiManager.addParameter( &blynk_Port );
+  wifiManager.addParameter(&baudrate_param);
+  wifiManager.addParameter(&dpsbits_param);
+  wifiManager.addParameter(&program_param);
+  wifiManager.addParameter(&mode_param);
+
+
+  //set config save notify callback
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
 
 
 
-  void loop() {
-    //  time_t now;
-    String str = "";
-    int byteCount = 0;
 
-
-    while (hwSerial.available()) {
-      char c = hwSerial.read();
-
-      rawWeight += c;
-
-      diffMillis = millis();
-    }
-
-
-
-    weight = rawWeight.substring(4, rawWeight.length() - 3);
-    weight.trim();
-
-    drawWeight();
-    if (rawWeight.length() > 0) {
-
-
-      composeJson();
-      boolean pro_int;
-      if (program == "Program2") pro_int = 1;
-      else pro_int = 0;
-      unsigned char u;
-
-      int isSend = client.publish(sett.MODE, json.c_str(), pro_int);
-      Serial.println(isSend);
-      if(isSend < 1)
-        rssi = 0;
-    }
-
-
-    rawWeight = "";
-
-    runner.execute();
-    server.handleClient();
-    ArduinoOTA.handle();
-  }
-
-
-  void drawWeight() {
-    int offset = 0;
-    weightSprite.fillScreen(TFT_BLACK);
-    weightSprite.setTextColor(TFT_WHITE);
-
-    if (_messageId <= 9) {
-      offset = 60;
-    } else if ((_messageId >= 10) && (_messageId <= 99)) {
-      offset = 40;
-    } else if ((_messageId >= 100) && (_messageId <= 999)) {
-      offset = 20;
-    } else if ((_messageId >= 1000) && (_messageId <= 999)) {
-      offset = 0;
-    }
-    weightSprite.drawNumber(_messageId, offset, 0, 7); // Value in middle
-    //    weightSprite.drawString("Kg", 143, 15, 1); // Value in middle
-
-    weightSprite.pushSprite(0, 40);
+  wifiName.concat(uint64ToString(chipId));
+  if (!wifiManager.autoConnect(wifiName.c_str())) {
+    Serial.println("failed to connect and hit timeout");
 
 
   }
-  String a0(int n) {
-    return (n < 10) ? "0" + String(n) : String(n);
+  deviceToken = wifiName.c_str();
+  if (baudrate_param.getValue() != "") strcpy(baudrate, baudrate_param.getValue());
+  if (dpsbits_param.getValue() != "") strcpy(dpsbits, dpsbits_param.getValue());
+  if (program_param.getValue() != "") strcpy(program, program_param.getValue());
+  if (mode_param.getValue() != "") strcpy(mode_select, mode_param.getValue());
+  if (blynk_Token.getValue() != "") strcpy(sett.TOKEN, blynk_Token.getValue());
+  if (blynk_Server.getValue() != "") strcpy(sett.SERVER, blynk_Server.getValue());
+  if (blynk_Port.getValue() != 0) sett.PORT =  blynk_Port.getValue();
+  Serial.println("saving config");
+  DynamicJsonDocument jsonBuffer(1024);
+  jsonBuffer["baudrate"] = baudrate;
+  jsonBuffer["dpsbits"] = dpsbits;
+  jsonBuffer["program"] = program;
+  jsonBuffer["mode_select"] = mode_select;
+  jsonBuffer["token"] = sett.TOKEN;
+  jsonBuffer["server"] = sett.SERVER;
+  jsonBuffer["port"] = sett.PORT;
+  File configFile = SPIFFS.open("/config.json", "w");
+  if (!configFile) {
+    Serial.println("failed to open config file for writing");
   }
 
-  void drawTime() {
+  serializeJson(jsonBuffer, Serial);
+  serializeJson(jsonBuffer, configFile);
+  configFile.close();
+  int dps_int;
+  if (strcmp(dpsbits, "5N1") == 0) dps_int = 134217744;
+  else if (strcmp(dpsbits, "6N1") == 0) dps_int = 134217748;
+  else if (strcmp(dpsbits, "7N1") == 0) dps_int = 134217752;
+  else if (strcmp(dpsbits, "8N1") == 0) dps_int = 134217756;
+  else if (strcmp(dpsbits, "5N2") == 0) dps_int = 134217776;
+  else if (strcmp(dpsbits, "6N2") == 0) dps_int = 134217780;
+  else if (strcmp(dpsbits, "7N2") == 0) dps_int = 134217784;
+  else if (strcmp(dpsbits, "8N2") == 0) dps_int = 134217788;
+  else if (strcmp(dpsbits, "5E1") == 0) dps_int = 134217746;
+  else if (strcmp(dpsbits, "6E1") == 0) dps_int = 134217750;
+  else if (strcmp(dpsbits, "7E1") == 0) dps_int = 134217754;
+  else if (strcmp(dpsbits, "8E1") == 0) dps_int = 134217758;
+  else if (strcmp(dpsbits, "5E2") == 0) dps_int = 134217778;
+  else if (strcmp(dpsbits, "6E2") == 0) dps_int = 134217782;
+  else if (strcmp(dpsbits, "7E2") == 0) dps_int = 134217786;
+  else if (strcmp(dpsbits, "8E2") == 0) dps_int = 134217790;
+  else if (strcmp(dpsbits, "5O1") == 0) dps_int = 134217747;
+  else if (strcmp(dpsbits, "6O1") == 0) dps_int = 134217751;
+  else if (strcmp(dpsbits, "7O1") == 0) dps_int = 134217755;
+  else if (strcmp(dpsbits, "8O1") == 0) dps_int = 134217759;
+  else if (strcmp(dpsbits, "5O2") == 0) dps_int = 134217779;
+  else if (strcmp(dpsbits, "6O2") == 0) dps_int = 134217783;
+  else if (strcmp(dpsbits, "7O2") == 0) dps_int = 134217787;
+  else if (strcmp(dpsbits, "6O2") == 0) dps_int = 134217791;
+  hwSerial.begin(atoi(baudrate), dps_int, SERIAL1_RXPIN, SERIAL1_TXPIN);
+  String topic = "Farm/Cloud/Device/Mode" + String(mode_select) + "/" + deviceToken;
+  topic.toCharArray(sett.MODE, sizeof(sett.MODE));
+  configTime(gmtOffset_sec, 0, ntpServer);
+  client.setServer( sett.SERVER, sett.PORT );
 
-    String dateS = "";
-    String timeS = "";
-    //  _epoch = time(&now) + 25200; // GMT+7 Asia/BKK Timezone
-    //  ts = _epoch;
-    if (!getLocalTime(&timeinfo)) {
-      //Serial.println("Failed to obtain time");
-      return;
+
+  setupWIFI();
+  setupOTA();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    /* Put IP Address details */
+    IPAddress local_ip(192, 168, 1, 1);
+    IPAddress gateway(192, 168, 1, 1);
+    IPAddress subnet(255, 255, 255, 0);
+
+    WiFi.softAP("TATWeightCapturer", "76507650");
+    WiFi.softAPConfig(local_ip, gateway, subnet);
+  }
+
+  server.on("/", handleRoot);
+  server.on("/setting", handleSetting);
+  server.on("/save_setting", handleSettingSave);
+  server.on("/generate_204", handleRoot);  //Android captive portal. Maybe not needed. Might be handled by notFound handler.
+  server.on("/fwlink", handleRoot);  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
+  server.onNotFound ( handle_NotFound );
+  server.begin();
+  Serial.println("HTTP server started");
+  Serial.println(WiFi.localIP());
+
+  runner.init();
+  Serial.println("Initialized scheduler");
+
+
+  runner.addTask(t2);
+  //  Serial.println("added t2");
+  runner.addTask(t3);
+  //  Serial.println("added t3");
+  runner.addTask(t4);
+  //  Serial.println("added t4");
+  //  runner.addTask(t6);
+  runner.addTask(t7);
+  delay(2000);
+
+  t2.enable();
+  //  Serial.println("Enabled t2");
+  t3.enable();
+  //  Serial.println("Enabled t3");
+  t4.enable();
+  //  Serial.println("Enabled t4");
+  //  t6.enable();
+  t7.enable();
+
+  //  Serial.println("Initialized scheduler");
+  tft.begin();
+
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+
+  weightSprite.createSprite(WEIGHT_WIDTH, WEIGHT_HEIGHT);
+  weightSprite.fillSprite(TFT_BLACK);
+
+  headerSprite.createSprite(HEADER_WIDTH, HEADER_HEIGHT);
+  headerSprite.fillSprite(TFT_BLACK);
+
+  wifiSprite.createSprite(WiFi_WIDTH, WiFi_HEIGHT);
+  wifiSprite.fillSprite(TFT_BLACK);
+
+  timeSprite.createSprite(TIME_WIDTH, TIME_HEIGHT);
+  timeSprite.fillSprite(TFT_BLACK);
+
+  ver.createSprite(VER_WIDTH, VER_HEIGHT);
+  ver.fillSprite(TFT_BLACK);
+
+
+
+
+  drawWiFi();
+  drawTime();
+  drawVersion();
+
+  header(deviceToken.c_str());
+
+  //create a task that will be executed in the Task2code() function, with priority 1 and executed on core 1
+  xTaskCreatePinnedToCore(
+    Task2code,   /* Task function. */
+    "Task2",     /* name of task. */
+    10000,       /* Stack size of task */
+    NULL,        /* parameter of the task */
+    1,           /* priority of the task */
+    &Task2,      /* Task handle to keep track of created task */
+    1);          /* pin task to core 1 */
+  delay(500);
+
+
+  if (program == "Program2") pro_int = 1;
+  else pro_int = 0;
+  unsigned char u;
+
+  previousMillis = millis();
+}
+
+
+
+void loop() {
+  //  time_t now;
+  String str = "";
+  int byteCount = 0;
+
+
+  while (hwSerial.available()) {
+    char c = hwSerial.read();
+    rawWeight += c;
+    currentRollOver = millis();
+    diffMillis = millis();
+
+    if (currentRollOver - previousRollOver >= intervalRollOver)
+    {
+      diffMillis = 0;
+      previousRollOver = millis();
     }
 
 
-    dateS = a0(timeinfo.tm_mday) + "/" + a0(timeinfo.tm_mon + 1) + "/" + String(timeinfo.tm_year + 1900);
-    timeS = a0(timeinfo.tm_hour) + ":" + a0(timeinfo.tm_min);//  + ":" + a0(timeinfo.tm_sec);
-    timeSprite.fillScreen(TFT_BLACK);
-
-    timeSprite.setTextColor(TFT_YELLOW);
-    timeSprite.drawString(dateS, 0, 0, 2); // Font 4 for fast drawing with background
-    timeSprite.drawString(timeS, 0, 15, 2); // Font 4 for fast drawing with background
-
-    timeSprite.pushSprite(0, 0);
-
   }
 
-  void drawUpdate(int num, int x, int y)
+  weight = rawWeight.substring(4, rawWeight.length() - 3);
+  weight.trim();
+  
+  currentMillis = millis();
+  if (currentMillis - previousMillis >= interval)
   {
-    updateSprite.createSprite(25, 20);
-    updateSprite.fillScreen(TFT_BLACK);
-    //  updateSprite.setFreeFont(FSB9);
-    updateSprite.setTextColor(TFT_YELLOW);
-    updateSprite.setTextSize(1);
-    updateSprite.drawNumber(num, 0, 4);
-    updateSprite.drawString("%", 20, 4);
-    updateSprite.pushSprite(x, y);
-    updateSprite.deleteSprite();
+    drawCountInSec();
+    countInSec = 0;
+    previousMillis = millis();
+  }
+  drawWeight();
+
+  if (rawWeight.length() > 0) {
+    composeJson();
+    int isSend = client.publish(sett.MODE, json.c_str(), pro_int);
+    Serial.println(isSend);
+    if (isSend < 1) {
+      setupWIFI();
+      setupOTA();
+      rssi = 0;
+    }
+  } else {
+
+    
   }
 
 
+  rawWeight = "";
 
-  //====================================================================================
-  // This is the function to draw the icon stored as an array in program memory (FLASH)
-  //====================================================================================
 
-  // To speed up rendering we use a 64 pixel buffer
+
+  runner.execute();
+  server.handleClient();
+  ArduinoOTA.handle();
+}
+
+
+void drawWeight() {
+  int offset = 0;
+  weightSprite.fillScreen(TFT_BLACK);
+  weightSprite.setTextColor(TFT_WHITE);
+
+  if (_messageId <= 9) {
+    offset = 60;
+  } else if ((_messageId >= 10) && (_messageId <= 99)) {
+    offset = 40;
+  } else if ((_messageId >= 100) && (_messageId <= 999)) {
+    offset = 20;
+  } else if ((_messageId >= 1000) && (_messageId <= 999)) {
+    offset = 0;
+  }
+  weightSprite.drawNumber(_messageId, offset, 0, 7); // Value in middle
+  //    weightSprite.drawString("Kg", 143, 15, 1); // Value in middle
+
+  weightSprite.pushSprite(0, 40);
+
+
+}
+String a0(int n) {
+  return (n < 10) ? "0" + String(n) : String(n);
+}
+
+void drawTime() {
+
+  String dateS = "";
+  String timeS = "";
+  //  _epoch = time(&now) + 25200; // GMT+7 Asia/BKK Timezone
+  //  ts = _epoch;
+  if (!getLocalTime(&timeinfo)) {
+    //Serial.println("Failed to obtain time");
+    return;
+  }
+
+
+  dateS = a0(timeinfo.tm_mday) + "/" + a0(timeinfo.tm_mon + 1) + "/" + String(timeinfo.tm_year + 1900);
+  timeS = a0(timeinfo.tm_hour) + ":" + a0(timeinfo.tm_min);//  + ":" + a0(timeinfo.tm_sec);
+  timeSprite.fillScreen(TFT_BLACK);
+
+  timeSprite.setTextColor(TFT_YELLOW);
+  timeSprite.drawString(dateS, 0, 0, 2); // Font 4 for fast drawing with background
+  timeSprite.drawString(timeS, 0, 15, 2); // Font 4 for fast drawing with background
+
+  timeSprite.pushSprite(0, 0);
+
+}
+
+void drawUpdate(int num, int x, int y)
+{
+  updateSprite.createSprite(25, 20);
+  updateSprite.fillScreen(TFT_BLACK);
+  //  updateSprite.setFreeFont(FSB9);
+  updateSprite.setTextColor(TFT_YELLOW);
+  updateSprite.setTextSize(1);
+  updateSprite.drawNumber(num, 0, 4);
+  updateSprite.drawString("%", 20, 4);
+  updateSprite.pushSprite(x, y);
+  updateSprite.deleteSprite();
+}
+
+void drawVersion() {
+  ver.createSprite(35, 20);
+  ver.setTextColor(TFT_ORANGE);
+  ver.setTextSize(1);
+  ver.drawString("v4.0", 0, 0);
+  ver.pushSprite(135, 115);
+}
+
+void drawCountInSec() {
+
+
+  countInSecSprite.createSprite(30, 20);
+  countInSecSprite.fillScreen(TFT_BLACK);
+  countInSecSprite.setTextColor(TFT_GOLD);
+  countInSecSprite.setTextSize(2);
+  countInSecSprite.drawNumber(countInSec, 0, 0);
+  countInSecSprite.pushSprite(85, 0);
+
+}
+//====================================================================================
+// This is the function to draw the icon stored as an array in program memory (FLASH)
+//====================================================================================
+
+// To speed up rendering we use a 64 pixel buffer
 #define BUFF_SIZE 64
 
-  // Draw array "icon" of defined width and height at coordinate x,y
-  // Maximum icon size is 255x255 pixels to avoid integer overflow
+// Draw array "icon" of defined width and height at coordinate x,y
+// Maximum icon size is 255x255 pixels to avoid integer overflow
 
-  // Print the header for a display screen
-  void header(const char *string)
+// Print the header for a display screen
+void header(const char *string)
+{
+  headerSprite.setTextSize(1);
+
+
+  headerSprite.setTextColor(TFT_GREEN);
+  headerSprite.drawString(string, 5, 2, 2); // Font 4 for fast drawing with background
+  headerSprite.pushSprite(0, tft.height() - 15);
+
+
+}
+
+// Draw a + mark centred on x,y
+void drawDatum(int x, int y)
+{
+  tft.drawLine(x - 5, y, x + 5, y, TFT_GREEN);
+  tft.drawLine(x, y - 5, x, y + 5, TFT_GREEN);
+}
+
+void composeJson() {
+
+  countInSec++;
+
+  _messageId++;
+  json = "";
+  if (_messageId > 9999) _messageId = 0;
+  json.concat(deviceToken);
+  json.concat(",");
+  json.concat(_messageId);
+  json.concat(",");
+  json.concat(diffMillis);
+  json.concat(",");
+  json.concat(rawWeight);
+  Serial.println(json);
+
+  if (diffMillis == 0 ) {
+    delay(1000);
+    ESP.restart();
+  }
+
+
+
+}
+
+
+
+void tCallback() {
+  Scheduler &s = Scheduler::currentScheduler();
+  Task &t = s.currentTask();
+
+  //  Serial.print("Task: "); Serial.print(t.getId()); Serial.print(":\t");
+  //  Serial.print(millis()); Serial.print("\tStart delay = "); Serial.println(t.getStartDelay());
+  //  delay(10);
+
+  //  if (t1.isFirstIteration()) {
+  //    runner.addTask(t2);
+  //    t2.enable();
+  //    //    Serial.println("t1CallgetProbe: enabled t2CallshowEnv and added to the chain");
+  //  }
+
+
+}
+
+
+
+void t2CallShowEnv() {
+
+  drawWiFi();
+  Serial.print("deviceToken:");
+  Serial.println(deviceToken);
+}
+void t3CallConnector() {
+  Serial.println("Attach WiFi for，OTA "); Serial.println(WiFi.RSSI() );
+
+  setupWIFI();
+  setupOTA();
+  if ( !client.connected() )
   {
-    headerSprite.setTextSize(1);
-
-
-    headerSprite.setTextColor(TFT_GREEN);
-    headerSprite.drawString(string, 5, 2, 2); // Font 4 for fast drawing with background
-    headerSprite.pushSprite(0, tft.height() - 15);
-
-
+    reconnectMqtt();
   }
 
-  // Draw a + mark centred on x,y
-  void drawDatum(int x, int y)
-  {
-    tft.drawLine(x - 5, y, x + 5, y, TFT_GREEN);
-    tft.drawLine(x, y - 5, x, y + 5, TFT_GREEN);
-  }
+}
 
-  void composeJson() {
+void HeartBeat() {
+  //   Sink current to drain charge from watchdog circuit
+  pinMode(trigWDTPin, OUTPUT);
+  digitalWrite(trigWDTPin, LOW);
 
-    _messageId++;
-    json = "";
-    if (_messageId > 9999) _messageId = 0;
-    json.concat(deviceToken);
-    json.concat(",");
-    json.concat(_messageId);
-    json.concat(",");
-    json.concat(diffMillis);
-    json.concat(",");
-    json.concat(rawWeight);
-    Serial.println(json);
+  // Led monitor for Heartbeat
+  //    digitalWrite(ledHeartPIN, LOW);
+  delay(50);
+  //    digitalWrite(ledHeartPIN, HIGH);
 
+  //    // Return to high-Z
+  pinMode(trigWDTPin, INPUT);
 
+  //    Serial.println("Heartbeat");
 
+}
 
-  }
+void t4CallWatchDog() {
+  HeartBeat();
+}
 
+void t5CallSendAttribute() {}
 
-
-  void tCallback() {
-    Scheduler &s = Scheduler::currentScheduler();
-    Task &t = s.currentTask();
-
-    //  Serial.print("Task: "); Serial.print(t.getId()); Serial.print(":\t");
-    //  Serial.print(millis()); Serial.print("\tStart delay = "); Serial.println(t.getStartDelay());
-    //  delay(10);
-
-    //  if (t1.isFirstIteration()) {
-    //    runner.addTask(t2);
-    //    t2.enable();
-    //    //    Serial.println("t1CallgetProbe: enabled t2CallshowEnv and added to the chain");
-    //  }
+void t7showTime() {
 
 
-  }
+  drawTime();
 
-
-
-  void t2CallShowEnv() {
-
-    drawWiFi();
-    Serial.print("deviceToken:");
-    Serial.println(deviceToken);
-  }
-  void t3CallConnector() {
-    Serial.println("Attach WiFi for，OTA "); Serial.println(WiFi.RSSI() );
-
-    setupWIFI();
-    setupOTA();
-    if ( !client.connected() )
-    {
-      reconnectMqtt();
-    }
-
-  }
-
-  void HeartBeat() {
-    //   Sink current to drain charge from watchdog circuit
-    pinMode(trigWDTPin, OUTPUT);
-    digitalWrite(trigWDTPin, LOW);
-
-    // Led monitor for Heartbeat
-    digitalWrite(ledHeartPIN, LOW);
-    delay(300);
-    digitalWrite(ledHeartPIN, HIGH);
-
-    // Return to high-Z
-    pinMode(trigWDTPin, INPUT);
-
-    Serial.println("Heartbeat");
-
-  }
-
-  void t4CallWatchDog() {
-    HeartBeat();
-  }
-
-  void t5CallSendAttribute() {}
-
-  void t7showTime() {
-
-
-    drawTime();
-
-  }
+}
